@@ -66,48 +66,6 @@ export function createRecognizer(options: RecognizerOptions): Recognizer {
   }
 
   /**
-   * Process plugin results and emit events
-   */
-  function processResults(
-    result: { upsert?: Array<{ key: string } & Omit<import('./types.js').Entity, 'id'>>; remove?: string[] }
-  ) {
-    // Process removals first
-    if (result.remove && result.remove.length > 0) {
-      const removed = store.removeByKeys(result.remove)
-      for (const entity of removed) {
-        emitter.emit('remove', {
-          type: 'remove',
-          id: entity.id,
-          key: entity.key,
-        })
-      }
-    }
-
-    // Process upserts
-    if (result.upsert && result.upsert.length > 0) {
-      const changes = store.upsert(result.upsert)
-
-      // Emit events for new entities
-      for (const entity of changes.added) {
-        emitter.emit('entity', {
-          type: 'entity',
-          entity,
-          isUpdate: false,
-        })
-      }
-
-      // Emit events for updated entities
-      for (const entity of changes.updated) {
-        emitter.emit('entity', {
-          type: 'entity',
-          entity,
-          isUpdate: true,
-        })
-      }
-    }
-  }
-
-  /**
    * Run realtime analysis
    */
   async function runRealtime() {

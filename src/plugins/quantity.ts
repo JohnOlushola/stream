@@ -16,8 +16,8 @@ const UNIT_PATTERNS = {
   currency: ['USD', 'EUR', 'GBP', 'JPY', '$', '€', '£', '¥'],
 }
 
-// Flatten all units for regex
-const ALL_UNITS = Object.values(UNIT_PATTERNS).flat()
+// Flatten all units for regex and sort by length (longest first for proper matching)
+const ALL_UNITS = Object.values(UNIT_PATTERNS).flat().sort((a, b) => b.length - a.length)
 
 // Build regex pattern
 // Matches: 10km, 10 km, 10.5 km, 10,000 km, $10, €50
