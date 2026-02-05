@@ -1,5 +1,5 @@
-import { useState, useCallback, useRef, useEffect } from 'react'
-import { createRecognizer, plugins, type Entity, type EntityEvent, type RemoveEvent, type DiagnosticEvent } from 'streamsense'
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
+import { createRecognizer, plugins, type Entity, type Recognizer } from 'streamsense'
 
 const ENTITY_STYLES: Record<string, string> = {
   quantity: 'bg-blue-500/25 shadow-[0_2px_0_#3b82f6]',
@@ -33,18 +33,45 @@ type EventLog = {
   time: string
 }
 
+// Keep events in a ref to avoid re-renders, sync to state periodically
+const MAX_EVENTS = 100
+
 export default function App() {
   const [text, setText] = useState('')
-  const [entities, setEntities] = useState<Record<string, Entity>>({})
+  const [entities, setEntities] = useState<Entity[]>([])
   const [events, setEvents] = useState<EventLog[]>([])
   const [eventCount, setEventCount] = useState(0)
   
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const backdropRef = useRef<HTMLDivElement>(null)
-  const recognizerRef = useRef<ReturnType<typeof createRecognizer> | null>(null)
+  const recognizerRef = useRef<Recognizer | null>(null)
+  
+  // Use refs for mutable state that doesn't need to trigger renders immediately
+  const entitiesMapRef = useRef<Map<string, Entity>>(new Map())
+  const eventsRef = useRef<EventLog[]>([])
   const eventIdRef = useRef(0)
+  const eventCountRef = useRef(0)
+  const updateScheduledRef = useRef(false)
 
-  // Initialize recognizer
+  // Schedule a batched UI update
+  const scheduleUpdate = useCallback(() => {
+    if (updateScheduledRef.current) return
+    updateScheduledRef.current = true
+    
+    requestAnimationFrame(() => {
+      updateScheduledRef.current = false
+      
+      // Sync refs to state
+      const entityList = Array.from(entitiesMapRef.current.values())
+        .sort((a, b) => a.span.start - b.span.start)
+      
+      setEntities(entityList)
+      setEvents([...eventsRef.current])
+      setEventCount(eventCountRef.current)
+    })
+  }, [])
+
+  // Initialize recognizer once
   useEffect(() => {
     const logEvent = (type: EventLog['type'], action: string, detail: string) => {
       const time = new Date().toLocaleTimeString('en-US', {
@@ -54,11 +81,11 @@ export default function App() {
         second: '2-digit',
       })
       
-      setEvents(prev => {
-        const next = [{ id: eventIdRef.current++, type, action, detail, time }, ...prev]
-        return next.slice(0, 100)
-      })
-      setEventCount(c => c + 1)
+      eventsRef.current = [
+        { id: eventIdRef.current++, type, action, detail, time },
+        ...eventsRef.current.slice(0, MAX_EVENTS - 1)
+      ]
+      eventCountRef.current++
     }
 
     const recognizer = createRecognizer({
@@ -75,26 +102,25 @@ export default function App() {
       },
     })
 
-    recognizer.on('entity', (e: EntityEvent) => {
-      setEntities(prev => ({ ...prev, [e.entity.id]: e.entity }))
+    recognizer.on('entity', (e) => {
+      entitiesMapRef.current.set(e.entity.id, e.entity)
       logEvent('entity', e.isUpdate ? 'update' : 'add', e.entity.text)
+      scheduleUpdate()
     })
 
-    recognizer.on('remove', (e: RemoveEvent) => {
-      setEntities(prev => {
-        const entity = prev[e.id]
-        if (entity) {
-          logEvent('remove', 'remove', entity.text)
-        }
-        const next = { ...prev }
-        delete next[e.id]
-        return next
-      })
+    recognizer.on('remove', (e) => {
+      const entity = entitiesMapRef.current.get(e.id)
+      if (entity) {
+        logEvent('remove', 'remove', entity.text)
+        entitiesMapRef.current.delete(e.id)
+        scheduleUpdate()
+      }
     })
 
-    recognizer.on('diagnostic', (e: DiagnosticEvent) => {
+    recognizer.on('diagnostic', (e) => {
       if (e.severity !== 'info') {
         logEvent('diagnostic', e.severity, e.message)
+        scheduleUpdate()
       }
     })
 
@@ -102,8 +128,9 @@ export default function App() {
 
     return () => {
       recognizer.destroy()
+      recognizerRef.current = null
     }
-  }, [])
+  }, [scheduleUpdate])
 
   const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newText = e.target.value
@@ -126,21 +153,19 @@ export default function App() {
     }
   }, [])
 
-  // Sorted entity list
-  const entityList = Object.values(entities).sort((a, b) => a.span.start - b.span.start)
-  const confirmedCount = entityList.filter(e => e.status === 'confirmed').length
-
-  // Build highlighted content
-  const renderHighlights = () => {
+  // Memoize highlight rendering
+  const highlights = useMemo(() => {
     if (!text) return null
-    if (entityList.length === 0) return text
+    if (entities.length === 0) return text
 
     const segments: React.ReactNode[] = []
     let lastIndex = 0
 
-    for (const entity of entityList) {
+    for (const entity of entities) {
       if (entity.span.start > lastIndex) {
-        segments.push(text.slice(lastIndex, entity.span.start))
+        segments.push(
+          <span key={`t-${lastIndex}`}>{text.slice(lastIndex, entity.span.start)}</span>
+        )
       }
       segments.push(
         <span key={entity.id} className={`rounded-sm ${ENTITY_STYLES[entity.kind] || ''}`}>
@@ -151,11 +176,16 @@ export default function App() {
     }
 
     if (lastIndex < text.length) {
-      segments.push(text.slice(lastIndex))
+      segments.push(<span key={`t-${lastIndex}`}>{text.slice(lastIndex)}</span>)
     }
 
     return segments
-  }
+  }, [text, entities])
+
+  const confirmedCount = useMemo(
+    () => entities.filter(e => e.status === 'confirmed').length,
+    [entities]
+  )
 
   return (
     <div className="flex h-screen bg-[#0a0a0a]">
@@ -175,7 +205,7 @@ export default function App() {
             ref={backdropRef}
             className="absolute inset-0 p-5 text-lg leading-7 whitespace-pre-wrap break-words overflow-hidden pointer-events-none text-transparent"
           >
-            {renderHighlights()}
+            {highlights}
           </div>
           <textarea
             ref={textareaRef}
@@ -208,7 +238,7 @@ export default function App() {
           </h2>
           <div className="grid grid-cols-2 gap-2">
             <Metric label="Characters" value={text.length} />
-            <Metric label="Entities" value={entityList.length} />
+            <Metric label="Entities" value={entities.length} />
             <Metric label="Confirmed" value={confirmedCount} />
             <Metric label="Events" value={eventCount} />
           </div>
@@ -220,40 +250,24 @@ export default function App() {
             Current Entities
           </h2>
           <div className="max-h-44 overflow-y-auto space-y-1.5">
-            {entityList.length === 0 ? (
+            {entities.length === 0 ? (
               <p className="text-neutral-600 text-xs italic">No entities detected</p>
             ) : (
-              entityList.map(entity => (
-                <div key={entity.id} className="flex items-center gap-2 p-2 bg-neutral-900 rounded-md text-xs">
-                  <span className={`px-1.5 py-0.5 rounded text-[0.6rem] font-semibold uppercase text-white ${KIND_COLORS[entity.kind]}`}>
-                    {entity.kind}
-                  </span>
-                  <span className="flex-1 truncate text-neutral-300">{entity.text}</span>
-                  <span className="text-neutral-600 tabular-nums">{Math.round(entity.confidence * 100)}%</span>
-                </div>
+              entities.map(entity => (
+                <EntityItem key={entity.id} entity={entity} />
               ))
             )}
           </div>
         </div>
 
         {/* Event Stream */}
-        <div className="flex-1 p-4 overflow-hidden flex flex-col">
+        <div className="flex-1 p-4 overflow-hidden flex flex-col min-h-0">
           <h2 className="text-[0.65rem] font-semibold uppercase tracking-wide text-neutral-600 mb-3">
             Event Stream
           </h2>
           <div className="flex-1 overflow-y-auto space-y-1 font-mono text-[0.65rem]">
             {events.map(event => (
-              <div key={event.id} className="flex gap-2 p-1.5 bg-neutral-900 rounded items-start">
-                <span className="text-neutral-600 shrink-0">{event.time}</span>
-                <span className={`font-semibold shrink-0 ${
-                  event.type === 'entity' ? 'text-green-500' :
-                  event.type === 'remove' ? 'text-red-500' :
-                  'text-yellow-500'
-                }`}>
-                  {event.action}
-                </span>
-                <span className="text-neutral-500 truncate">{event.detail}</span>
-              </div>
+              <EventItem key={event.id} event={event} />
             ))}
           </div>
         </div>
@@ -262,11 +276,34 @@ export default function App() {
   )
 }
 
-function Metric({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="bg-neutral-900 rounded-lg p-3 text-center">
-      <div className="text-xl font-semibold text-neutral-200 tabular-nums">{value}</div>
-      <div className="text-[0.6rem] text-neutral-500 uppercase tracking-wide">{label}</div>
-    </div>
-  )
-}
+// Memoized components to prevent unnecessary re-renders
+const Metric = ({ label, value }: { label: string; value: number }) => (
+  <div className="bg-neutral-900 rounded-lg p-3 text-center">
+    <div className="text-xl font-semibold text-neutral-200 tabular-nums">{value}</div>
+    <div className="text-[0.6rem] text-neutral-500 uppercase tracking-wide">{label}</div>
+  </div>
+)
+
+const EntityItem = ({ entity }: { entity: Entity }) => (
+  <div className="flex items-center gap-2 p-2 bg-neutral-900 rounded-md text-xs">
+    <span className={`px-1.5 py-0.5 rounded text-[0.6rem] font-semibold uppercase text-white ${KIND_COLORS[entity.kind]}`}>
+      {entity.kind}
+    </span>
+    <span className="flex-1 truncate text-neutral-300">{entity.text}</span>
+    <span className="text-neutral-600 tabular-nums">{Math.round(entity.confidence * 100)}%</span>
+  </div>
+)
+
+const EventItem = ({ event }: { event: EventLog }) => (
+  <div className="flex gap-2 p-1.5 bg-neutral-900 rounded items-start">
+    <span className="text-neutral-600 shrink-0">{event.time}</span>
+    <span className={`font-semibold shrink-0 ${
+      event.type === 'entity' ? 'text-green-500' :
+      event.type === 'remove' ? 'text-red-500' :
+      'text-yellow-500'
+    }`}>
+      {event.action}
+    </span>
+    <span className="text-neutral-500 truncate">{event.detail}</span>
+  </div>
+)
