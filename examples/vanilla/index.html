@@ -7,28 +7,68 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <div class="container">
-    <header>
-      <h1>StreamSense</h1>
-      <p>Real-time semantic understanding from streaming text</p>
-    </header>
+  <div class="layout">
+    <!-- Main Content -->
+    <main class="main">
+      <header>
+        <h1>StreamSense</h1>
+        <p>Real-time semantic understanding from streaming text</p>
+      </header>
 
-    <div class="input-wrapper">
-      <div id="backdrop" class="backdrop"></div>
-      <textarea 
-        id="input" 
-        placeholder="Try: Meeting with john@example.com on Jan 15 about the 10km race..."
-        spellcheck="false"
-      ></textarea>
-    </div>
+      <div class="input-wrapper">
+        <div id="backdrop" class="backdrop"></div>
+        <textarea 
+          id="input" 
+          placeholder="Try: Meeting with john@example.com on Jan 15 about the 10km race..."
+          spellcheck="false"
+        ></textarea>
+      </div>
 
-    <div class="legend">
-      <span class="legend-item"><span class="dot quantity"></span>Quantity</span>
-      <span class="legend-item"><span class="dot email"></span>Email</span>
-      <span class="legend-item"><span class="dot datetime"></span>DateTime</span>
-      <span class="legend-item"><span class="dot url"></span>URL</span>
-      <span class="legend-item"><span class="dot phone"></span>Phone</span>
-    </div>
+      <div class="legend">
+        <span class="legend-item"><span class="dot quantity"></span>Quantity</span>
+        <span class="legend-item"><span class="dot email"></span>Email</span>
+        <span class="legend-item"><span class="dot datetime"></span>DateTime</span>
+        <span class="legend-item"><span class="dot url"></span>URL</span>
+        <span class="legend-item"><span class="dot phone"></span>Phone</span>
+      </div>
+    </main>
+
+    <!-- Side Panel -->
+    <aside class="panel">
+      <div class="panel-section">
+        <h2>Metrics</h2>
+        <div class="metrics">
+          <div class="metric">
+            <span class="metric-value" id="metric-chars">0</span>
+            <span class="metric-label">Characters</span>
+          </div>
+          <div class="metric">
+            <span class="metric-value" id="metric-entities">0</span>
+            <span class="metric-label">Entities</span>
+          </div>
+          <div class="metric">
+            <span class="metric-value" id="metric-confirmed">0</span>
+            <span class="metric-label">Confirmed</span>
+          </div>
+          <div class="metric">
+            <span class="metric-value" id="metric-events">0</span>
+            <span class="metric-label">Events</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <h2>Current Entities</h2>
+        <div id="entities-list" class="entities-list">
+          <p class="empty">No entities detected</p>
+        </div>
+      </div>
+
+      <div class="panel-section flex-1">
+        <h2>Event Stream</h2>
+        <div id="events-list" class="events-list"></div>
+      </div>
+    </aside>
   </div>
 
   <script type="module" src="app.js"></script>

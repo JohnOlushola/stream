@@ -97,6 +97,8 @@ const myPlugin = {
 
 ## Examples
 
+Both examples feature a centered input with real-time highlighting and a side panel showing metrics, detected entities, and a live event stream.
+
 ### Vanilla HTML/JS/CSS
 
 ```bash
@@ -111,23 +113,6 @@ npm run dev
 cd examples/react-app
 npm install
 npm run dev
-```
-
-The React example includes a custom `useStreamSense` hook for easy integration:
-
-```tsx
-import { useStreamSense } from './hooks/useStreamSense'
-
-function MyComponent() {
-  const { entities, feed, commit, clear } = useStreamSense()
-
-  return (
-    <textarea
-      onChange={(e) => feed(e.target.value)}
-      onKeyDown={(e) => e.key === 'Enter' && commit()}
-    />
-  )
-}
 ```
 
 ## License
