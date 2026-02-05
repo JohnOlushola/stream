@@ -95,6 +95,41 @@ const myPlugin = {
 }
 ```
 
+## Examples
+
+### Vanilla HTML/JS/CSS
+
+```bash
+cd examples/vanilla
+npm install
+npm run dev
+```
+
+### React + Tailwind + Vite
+
+```bash
+cd examples/react-app
+npm install
+npm run dev
+```
+
+The React example includes a custom `useStreamSense` hook for easy integration:
+
+```tsx
+import { useStreamSense } from './hooks/useStreamSense'
+
+function MyComponent() {
+  const { entities, feed, commit, clear } = useStreamSense()
+
+  return (
+    <textarea
+      onChange={(e) => feed(e.target.value)}
+      onKeyDown={(e) => e.key === 'Enter' && commit()}
+    />
+  )
+}
+```
+
 ## License
 
 MIT

@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>StreamSense - Vanilla Example</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>StreamSense</h1>
+      <p class="subtitle">Real-time semantic understanding from streaming text</p>
+    </header>
+
+    <main>
+      <div class="input-section">
+        <label for="input">Type something with quantities, emails, dates, or URLs:</label>
+        <textarea 
+          id="input" 
+          placeholder="Try: 'Meeting with john@example.com on Jan 15 about the 10km race. Details at https://example.com'"
+          rows="4"
+        ></textarea>
+        <div class="input-actions">
+          <button id="commit-btn">Commit (Enter)</button>
+          <button id="clear-btn">Clear</button>
+        </div>
+      </div>
+
+      <div class="output-section">
+        <div class="panel">
+          <h2>Detected Entities</h2>
+          <div id="entities" class="entities-list">
+            <p class="empty-state">Start typing to detect entities...</p>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>Event Log</h2>
+          <div id="events" class="events-list"></div>
+        </div>
+      </div>
+
+      <div class="highlighted-section">
+        <h2>Highlighted Text</h2>
+        <div id="highlighted" class="highlighted-text"></div>
+      </div>
+    </main>
+
+    <footer>
+      <p>StreamSense v0.1.0 - A streaming semantic engine</p>
+    </footer>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
