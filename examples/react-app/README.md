@@ -1,37 +1,24 @@
 # StreamSense - React Example
 
-A React + TypeScript + Tailwind example demonstrating StreamSense.
+A minimal React + Tailwind example with real-time text highlighting.
 
 ## Setup
 
 ```bash
-# From this directory
 npm install
 npm run dev
 ```
 
-Then open http://localhost:5173
+Open http://localhost:5173
 
-## Features
+## Try It
 
-- Custom React hook `useStreamSense` for easy integration
-- Real-time entity detection with live updates
-- Highlighted text with color-coded entity types
-- Statistics dashboard
-- Example text buttons for quick testing
-
-## Project Structure
-
-```
-src/
-├── App.tsx                    # Main application
-├── hooks/
-│   └── useStreamSense.ts      # StreamSense React hook
-└── components/
-    ├── EntityBadge.tsx        # Entity type badge
-    ├── EntityCard.tsx         # Entity display card
-    └── HighlightedText.tsx    # Text with highlights
-```
+Type text containing:
+- Quantities: `10 km`, `$50`, `5.5 kg`
+- Emails: `john@example.com`
+- Dates: `Jan 15`, `2024-03-15`, `tomorrow`
+- URLs: `https://example.com`
+- Phone numbers: `+1 (555) 123-4567`
 
 ## Using the Hook
 
@@ -39,10 +26,10 @@ src/
 import { useStreamSense } from './hooks/useStreamSense'
 
 function MyComponent() {
-  const { entities, feed, commit, clear } = useStreamSense()
+  const { entities, feed, commit } = useStreamSense()
 
   return (
-    <input
+    <textarea
       onChange={(e) => feed(e.target.value)}
       onKeyDown={(e) => e.key === 'Enter' && commit()}
     />

@@ -1,247 +1,128 @@
-import { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { useStreamSense } from './hooks/useStreamSense'
-import { EntityCard } from './components/EntityCard'
-import { HighlightedText } from './components/HighlightedText'
 
-const EXAMPLE_TEXTS = [
-  'Meeting with john@example.com on Jan 15 about the 10km race. Details at https://example.com',
-  'Convert 10 km to miles. The price is $50.99 per unit. Deadline: 2024-03-15 at 14:30',
-  'Call me at +1 (555) 123-4567 or email support@company.io. Ship 5kg package for €25.',
+const ENTITY_STYLES: Record<string, string> = {
+  quantity: 'bg-blue-500/25 shadow-[0_2px_0_#3b82f6]',
+  email: 'bg-green-500/25 shadow-[0_2px_0_#22c55e]',
+  datetime: 'bg-yellow-500/25 shadow-[0_2px_0_#eab308]',
+  url: 'bg-purple-500/25 shadow-[0_2px_0_#a855f7]',
+  phone: 'bg-pink-500/25 shadow-[0_2px_0_#ec4899]',
+}
+
+const LEGEND = [
+  { kind: 'quantity', color: 'bg-blue-500', label: 'Quantity' },
+  { kind: 'email', color: 'bg-green-500', label: 'Email' },
+  { kind: 'datetime', color: 'bg-yellow-500', label: 'DateTime' },
+  { kind: 'url', color: 'bg-purple-500', label: 'URL' },
+  { kind: 'phone', color: 'bg-pink-500', label: 'Phone' },
 ]
 
-function App() {
+export default function App() {
   const [text, setText] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const { entities, feed, commit, clear, isReady } = useStreamSense()
-
-  // Feed text to recognizer on change
-  useEffect(() => {
-    if (isReady) {
-      const cursor = textareaRef.current?.selectionStart ?? text.length
-      feed(text, cursor)
-    }
-  }, [text, isReady, feed])
+  const backdropRef = useRef<HTMLDivElement>(null)
+  const { entities, feed, commit } = useStreamSense()
 
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      setText(e.target.value)
+      const newText = e.target.value
+      setText(newText)
+      feed(newText, e.target.selectionStart)
     },
-    []
+    [feed]
   )
 
+  const handleScroll = useCallback(() => {
+    if (backdropRef.current && textareaRef.current) {
+      backdropRef.current.scrollTop = textareaRef.current.scrollTop
+    }
+  }, [])
+
   const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    (e: React.KeyboardEvent) => {
       if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault()
         commit()
       }
     },
     [commit]
   )
 
-  const handleClear = useCallback(() => {
-    setText('')
-    clear()
-  }, [clear])
+  // Build highlighted content
+  const renderHighlights = () => {
+    if (!text) return null
+    if (entities.length === 0) return text
 
-  const handleExample = useCallback((example: string) => {
-    setText(example)
-  }, [])
+    const segments: React.ReactNode[] = []
+    let lastIndex = 0
+
+    for (const entity of entities) {
+      if (entity.span.start > lastIndex) {
+        segments.push(text.slice(lastIndex, entity.span.start))
+      }
+      segments.push(
+        <span
+          key={entity.id}
+          className={`rounded-sm ${ENTITY_STYLES[entity.kind] || ''}`}
+        >
+          {entity.text}
+        </span>
+      )
+      lastIndex = entity.span.end
+    }
+
+    if (lastIndex < text.length) {
+      segments.push(text.slice(lastIndex))
+    }
+
+    return segments
+  }
 
   return (
-    <div className="min-h-screen py-8 px-4">
-      <div className="max-w-4xl mx-auto">
+    <div className="min-h-screen flex items-center justify-center p-8 bg-[#0a0a0a]">
+      <div className="w-full max-w-2xl">
         {/* Header */}
         <header className="text-center mb-8">
-          <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-500 to-purple-500 bg-clip-text text-transparent">
+          <h1 className="text-3xl font-semibold bg-gradient-to-r from-blue-500 to-purple-500 bg-clip-text text-transparent mb-2">
             StreamSense
           </h1>
-          <p className="text-gray-400 mt-2">
+          <p className="text-neutral-500 text-sm">
             Real-time semantic understanding from streaming text
           </p>
         </header>
 
-        {/* Input Section */}
-        <div className="mb-6">
-          <label className="block text-sm text-gray-400 mb-2">
-            Type something with quantities, emails, dates, or URLs:
-          </label>
+        {/* Input with highlighting */}
+        <div className="relative border border-neutral-800 rounded-xl bg-neutral-900/50 overflow-hidden focus-within:border-neutral-700 transition-colors">
+          {/* Backdrop for highlights */}
+          <div
+            ref={backdropRef}
+            className="absolute inset-0 p-5 text-lg leading-7 whitespace-pre-wrap break-words overflow-hidden pointer-events-none text-transparent"
+          >
+            {renderHighlights()}
+          </div>
+
+          {/* Actual textarea */}
           <textarea
             ref={textareaRef}
             value={text}
             onChange={handleChange}
+            onScroll={handleScroll}
             onKeyDown={handleKeyDown}
-            placeholder="Try: 'Meeting with john@example.com on Jan 15 about the 10km race...'"
-            rows={4}
-            className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 resize-y"
+            placeholder="Try: Meeting with john@example.com on Jan 15 about the 10km race..."
+            spellCheck={false}
+            className="relative w-full min-h-[200px] p-5 text-lg leading-7 bg-transparent text-neutral-200 placeholder-neutral-600 resize-none outline-none caret-neutral-200"
           />
-          <div className="flex gap-2 mt-3">
-            <button
-              onClick={commit}
-              className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white hover:bg-blue-600 hover:border-blue-600 transition-colors"
-            >
-              Commit (Enter)
-            </button>
-            <button
-              onClick={handleClear}
-              className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white hover:bg-red-600 hover:border-red-600 transition-colors"
-            >
-              Clear
-            </button>
-          </div>
-        </div>
-
-        {/* Example Buttons */}
-        <div className="mb-6">
-          <p className="text-sm text-gray-500 mb-2">Try an example:</p>
-          <div className="flex flex-wrap gap-2">
-            {EXAMPLE_TEXTS.map((example, index) => (
-              <button
-                key={index}
-                onClick={() => handleExample(example)}
-                className="px-3 py-1.5 text-sm bg-gray-800/50 border border-gray-700 rounded-lg text-gray-300 hover:bg-gray-700 hover:text-white transition-colors truncate max-w-xs"
-              >
-                {example.slice(0, 40)}...
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Main Content Grid */}
-        <div className="grid md:grid-cols-2 gap-4 mb-6">
-          {/* Entities Panel */}
-          <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
-            <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-4 pb-2 border-b border-gray-800">
-              Detected Entities ({entities.length})
-            </h2>
-            <div className="space-y-2 max-h-80 overflow-y-auto">
-              {entities.length === 0 ? (
-                <p className="text-gray-500 italic">
-                  Start typing to detect entities...
-                </p>
-              ) : (
-                entities.map((entity) => (
-                  <EntityCard key={entity.id} entity={entity} />
-                ))
-              )}
-            </div>
-          </div>
-
-          {/* Stats Panel */}
-          <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
-            <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-4 pb-2 border-b border-gray-800">
-              Statistics
-            </h2>
-            <div className="grid grid-cols-2 gap-4">
-              <StatCard
-                label="Characters"
-                value={text.length}
-                color="text-blue-400"
-              />
-              <StatCard
-                label="Entities"
-                value={entities.length}
-                color="text-green-400"
-              />
-              <StatCard
-                label="Confirmed"
-                value={entities.filter((e) => e.status === 'confirmed').length}
-                color="text-yellow-400"
-              />
-              <StatCard
-                label="Provisional"
-                value={entities.filter((e) => e.status === 'provisional').length}
-                color="text-purple-400"
-              />
-            </div>
-
-            {/* Entity Type Breakdown */}
-            {entities.length > 0 && (
-              <div className="mt-4 pt-4 border-t border-gray-800">
-                <h3 className="text-xs text-gray-500 uppercase mb-2">
-                  By Type
-                </h3>
-                <div className="flex flex-wrap gap-2">
-                  {Object.entries(
-                    entities.reduce(
-                      (acc, e) => {
-                        acc[e.kind] = (acc[e.kind] || 0) + 1
-                        return acc
-                      },
-                      {} as Record<string, number>
-                    )
-                  ).map(([kind, count]) => (
-                    <span
-                      key={kind}
-                      className="px-2 py-1 bg-gray-800 rounded text-sm"
-                    >
-                      <span className="text-gray-400">{kind}:</span>{' '}
-                      <span className="text-white font-medium">{count}</span>
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Highlighted Text Section */}
-        <div className="bg-gray-900 border border-gray-800 rounded-lg p-4 mb-6">
-          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-4">
-            Highlighted Text
-          </h2>
-          <div className="text-lg leading-relaxed whitespace-pre-wrap">
-            <HighlightedText text={text} entities={entities} />
-          </div>
         </div>
 
         {/* Legend */}
-        <div className="bg-gray-900/50 border border-gray-800 rounded-lg p-4">
-          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">
-            Entity Types
-          </h2>
-          <div className="flex flex-wrap gap-3">
-            <LegendItem color="bg-blue-500" label="Quantity" />
-            <LegendItem color="bg-green-500" label="Email" />
-            <LegendItem color="bg-yellow-500" label="DateTime" />
-            <LegendItem color="bg-purple-500" label="URL" />
-            <LegendItem color="bg-pink-500" label="Phone" />
-          </div>
+        <div className="flex justify-center gap-5 mt-6 flex-wrap">
+          {LEGEND.map(({ kind, color, label }) => (
+            <div key={kind} className="flex items-center gap-1.5 text-sm text-neutral-500">
+              <span className={`w-2 h-2 rounded-full ${color}`} />
+              {label}
+            </div>
+          ))}
         </div>
-
-        {/* Footer */}
-        <footer className="text-center text-gray-500 text-sm mt-8 pt-4 border-t border-gray-800">
-          StreamSense v0.1.0 - A streaming semantic engine
-        </footer>
       </div>
     </div>
   )
 }
-
-function StatCard({
-  label,
-  value,
-  color,
-}: {
-  label: string
-  value: number
-  color: string
-}) {
-  return (
-    <div className="bg-gray-800 rounded-lg p-3">
-      <div className={`text-2xl font-bold ${color}`}>{value}</div>
-      <div className="text-sm text-gray-400">{label}</div>
-    </div>
-  )
-}
-
-function LegendItem({ color, label }: { color: string; label: string }) {
-  return (
-    <div className="flex items-center gap-2">
-      <span className={`w-3 h-3 rounded ${color}`} />
-      <span className="text-sm text-gray-300">{label}</span>
-    </div>
-  )
-}
-
-export default App

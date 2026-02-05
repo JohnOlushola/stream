@@ -1,32 +1,23 @@
 # StreamSense - Vanilla Example
 
-A pure HTML/CSS/JavaScript example demonstrating StreamSense.
+A minimal HTML/CSS/JavaScript example with real-time text highlighting.
 
 ## Setup
 
 ```bash
-# From this directory
 npm install
 npm run dev
 ```
 
-Then open http://localhost:5173
+Open http://localhost:5173
 
-## Features
+## Try It
 
-- Real-time entity detection as you type
-- Highlighted text showing detected entities
-- Live event log
-- Support for quantities, emails, dates, URLs, and phone numbers
+Type text containing:
+- Quantities: `10 km`, `$50`, `5.5 kg`
+- Emails: `john@example.com`
+- Dates: `Jan 15`, `2024-03-15`, `tomorrow`
+- URLs: `https://example.com`
+- Phone numbers: `+1 (555) 123-4567`
 
-## Try These Examples
-
-```
-Meeting with john@example.com on Jan 15 about the 10km race.
-Details at https://example.com or call +1 (555) 123-4567
-```
-
-```
-Convert 10 km to miles. The price is $50.99 per unit.
-Deadline: 2024-03-15 at 14:30
-```
+Entities are highlighted in real-time as you type.
