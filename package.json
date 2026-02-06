@@ -1,0 +1,66 @@
+{
+  "name": "streamsense",
+  "version": "0.1.0",
+  "description": "Real-time semantic understanding from streaming text",
+  "author": "Temiloluwa Olushola",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/temiloluwaolushola/streamsense.git"
+  },
+  "homepage": "https://github.com/temiloluwaolushola/streamsense#readme",
+  "bugs": {
+    "url": "https://github.com/temiloluwaolushola/streamsense/issues"
+  },
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./plugins": {
+      "types": "./dist/plugins.d.ts",
+      "import": "./dist/plugins.js",
+      "require": "./dist/plugins.cjs"
+    }
+  },
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run test && npm run typecheck"
+  },
+  "keywords": [
+    "streaming",
+    "semantic",
+    "nlp",
+    "incremental",
+    "entity-recognition",
+    "real-time",
+    "text-analysis",
+    "parser",
+    "plugin"
+  ],
+  "devDependencies": {
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  }
+}
