@@ -44,6 +44,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
+    "bench": "tsx bench/run.ts",
     "prepack": "npm run build",
     "prepublishOnly": "npm run test && npm run typecheck"
   },
@@ -59,7 +60,12 @@
     "plugin"
   ],
   "devDependencies": {
+    "anchorme": "^3.0.8",
+    "chrono-node": "^2.9.0",
+    "compromise": "^14.14.5",
+    "tinybench": "^6.0.0",
     "tsup": "^8.5.1",
+    "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vitest": "^4.0.18"
   }
