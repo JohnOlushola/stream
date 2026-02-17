@@ -90,6 +90,37 @@ function toEntityKind(s: string): EntityKind {
 }
 
 /**
+ * Snap LLM span to the actual occurrence of `text` in `inputText`.
+ * Fixes off-by-a-few character drift from token-based indices.
+ * Prefers the occurrence whose midpoint is closest to the original (start, end).
+ */
+function snapSpanToText(
+  inputText: string,
+  start: number,
+  end: number,
+  text: string
+): { start: number; end: number } {
+  if (!text || text.length > inputText.length) return { start, end }
+  const goalMid = (start + end) / 2
+  let best: { start: number; end: number } | null = null
+  let bestDist = Infinity
+  let pos = 0
+  for (;;) {
+    const i = inputText.indexOf(text, pos)
+    if (i === -1) break
+    const j = i + text.length
+    const mid = (i + j) / 2
+    const dist = Math.abs(mid - goalMid)
+    if (dist < bestDist) {
+      bestDist = dist
+      best = { start: i, end: j }
+    }
+    pos = i + 1
+  }
+  return best ?? { start, end }
+}
+
+/**
  * Validates a single item from the LLM response. Returns a valid LlmEntity or null.
  * Ensures: correct types, start/end within text bounds, start < end, kind in allowed set.
  */
@@ -150,6 +181,24 @@ function buildCandidate(
     confidence: 0.85,
     status: 'confirmed',
   }
+}
+
+/** Snap span to actual text occurrence, then build candidate with global offsets. */
+function buildCandidateSnapped(
+  validated: LlmEntity,
+  inputText: string,
+  textOffset: number
+): EntityCandidate {
+  const { start, end, kind, text } = validated
+  const snapped = snapSpanToText(inputText, start, end, text)
+  const globalStart = snapped.start + textOffset
+  const globalEnd = snapped.end + textOffset
+  const textSlice = text || inputText.slice(snapped.start, snapped.end)
+  return buildCandidate(
+    { ...validated, start: globalStart, end: globalEnd },
+    toEntityKind(kind),
+    textSlice
+  )
 }
 
 export function createLlmPlugin(options: LlmPluginOptions = {}): Plugin {
@@ -253,16 +302,7 @@ export function createLlmPlugin(options: LlmPluginOptions = {}): Plugin {
                 const item = JSON.parse(line)
                 const validated = validateLlmEntity(item, textLen)
                 if (validated) {
-                  const { start, end, kind, text } = validated
-                  const globalStart = start + textOffset
-                  const globalEnd = end + textOffset
-                  const textSlice = text || inputText.slice(start, end)
-                  const candidate = buildCandidate(
-                    { ...validated, start: globalStart, end: globalEnd },
-                    toEntityKind(kind),
-                    textSlice
-                  )
-                  pushCandidate(candidate)
+                  pushCandidate(buildCandidateSnapped(validated, inputText, textOffset))
                 }
               } catch {
                 // skip line
@@ -273,16 +313,7 @@ export function createLlmPlugin(options: LlmPluginOptions = {}): Plugin {
           for (const item of arr) {
             const validated = validateLlmEntity(item, textLen)
             if (!validated) continue
-            const { start, end, kind, text } = validated
-            const globalStart = start + textOffset
-            const globalEnd = end + textOffset
-            const textSlice = text || inputText.slice(start, end)
-            const candidate = buildCandidate(
-              { ...validated, start: globalStart, end: globalEnd },
-              toEntityKind(kind),
-              textSlice
-            )
-            pushCandidate(candidate)
+            pushCandidate(buildCandidateSnapped(validated, inputText, textOffset))
           }
           return { upsert }
         }
@@ -305,17 +336,7 @@ export function createLlmPlugin(options: LlmPluginOptions = {}): Plugin {
         for (const item of arr) {
           const validated = validateLlmEntity(item, textLen)
           if (!validated) continue
-          const { start, end, kind, text } = validated
-          const globalStart = start + textOffset
-          const globalEnd = end + textOffset
-          const textSlice = text || inputText.slice(start, end)
-          const entityKind = toEntityKind(kind)
-          const candidate = buildCandidate(
-            { ...validated, start: globalStart, end: globalEnd },
-            entityKind,
-            textSlice
-          )
-          pushCandidate(candidate)
+          pushCandidate(buildCandidateSnapped(validated, inputText, textOffset))
         }
         return { upsert }
       } catch (e) {

@@ -24,3 +24,6 @@ npm-debug.log*
 # Environment
 .env
 .env.local
+
+# Notes (design/study docs — do not commit)
+notes/
