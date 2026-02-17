@@ -1,20 +1,10 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { createRecognizer, plugins, type Entity, type Recognizer } from 'streamsense'
 import { createLlmPlugin } from './llmPlugin'
-import { Switch } from '@/components/ui/switch'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Button } from '@/components/ui/button'
+import { StreamEditor } from '@/components/StreamEditor'
 import { cn } from '@/lib/utils'
-
-const ENTITY_STYLES: Record<string, string> = {
-  quantity: 'bg-blue-500/25 shadow-[0_2px_0_#3b82f6]',
-  email: 'bg-green-500/25 shadow-[0_2px_0_#22c55e]',
-  datetime: 'bg-yellow-500/25 shadow-[0_2px_0_#eab308]',
-  url: 'bg-purple-500/25 shadow-[0_2px_0_#a855f7]',
-  phone: 'bg-pink-500/25 shadow-[0_2px_0_#ec4899]',
-  person: 'bg-amber-500/25 shadow-[0_2px_0_#f59e0b]',
-  place: 'bg-teal-500/25 shadow-[0_2px_0_#14b8a6]',
-  custom: 'bg-slate-500/25 shadow-[0_2px_0_#64748b]',
-}
 
 const KIND_COLORS: Record<string, string> = {
   quantity: 'bg-blue-500',
@@ -35,6 +25,8 @@ type EventLog = {
   time: string
 }
 
+type RecognizerMode = 'regex' | 'llm' | 'all'
+
 // Keep events in a ref to avoid re-renders, sync to state periodically
 const MAX_EVENTS = 100
 
@@ -43,11 +35,9 @@ export default function App() {
   const [entities, setEntities] = useState<Entity[]>([])
   const [events, setEvents] = useState<EventLog[]>([])
   const [eventCount, setEventCount] = useState(0)
-  const [regexEnabled, setRegexEnabled] = useState(true)
+  const [recognizerMode, setRecognizerMode] = useState<RecognizerMode>('all')
   const [sidebarOpen, setSidebarOpen] = useState(true)
 
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const backdropRef = useRef<HTMLDivElement>(null)
   const recognizerRef = useRef<Recognizer | null>(null)
   const textRef = useRef(text)
   textRef.current = text
@@ -93,18 +83,19 @@ export default function App() {
       eventCountRef.current++
     }
 
-    const pluginList = [
-      ...(regexEnabled
-        ? [
-            plugins.quantity(),
-            plugins.email(),
-            plugins.datetime(),
-            plugins.url(),
-            plugins.phone(),
-          ]
-        : []),
-      createLlmPlugin(),
+    const regexPlugins = [
+      plugins.quantity(),
+      plugins.email(),
+      plugins.datetime(),
+      plugins.url(),
+      plugins.phone(),
     ]
+    const pluginList =
+      recognizerMode === 'regex'
+        ? regexPlugins
+        : recognizerMode === 'llm'
+          ? [createLlmPlugin()]
+          : [...regexPlugins, createLlmPlugin()]
 
     const recognizer = createRecognizer({
       plugins: pluginList,
@@ -138,11 +129,12 @@ export default function App() {
 
     recognizerRef.current = recognizer
 
-    // Re-feed current text so the new recognizer state matches
+    // Re-feed current text so the new recognizer state matches (StreamEditor will have called onFeed with latest)
     const currentText = textRef.current
     if (currentText) {
       recognizer.feed({ text: currentText, cursor: currentText.length })
-      if (!regexEnabled) recognizer.commit('manual')
+      if (recognizerMode === 'llm' || recognizerMode === 'all')
+        recognizer.commit('manual')
     }
 
     return () => {
@@ -153,57 +145,19 @@ export default function App() {
       eventCountRef.current = 0
       scheduleUpdate()
     }
-  }, [scheduleUpdate, regexEnabled])
+  }, [scheduleUpdate, recognizerMode])
 
-  const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const newText = e.target.value
-    setText(newText)
+  const handleFeed = useCallback((params: { text: string; cursor: number }) => {
+    setText(params.text)
     recognizerRef.current?.feed({
-      text: newText,
-      cursor: e.target.selectionStart,
+      text: params.text,
+      cursor: params.cursor,
     })
   }, [])
 
-  const handleScroll = useCallback(() => {
-    if (backdropRef.current && textareaRef.current) {
-      backdropRef.current.scrollTop = textareaRef.current.scrollTop
-    }
+  const handleCommit = useCallback(() => {
+    recognizerRef.current?.commit('enter')
   }, [])
-
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      recognizerRef.current?.commit('enter')
-    }
-  }, [])
-
-  // Memoize highlight rendering
-  const highlights = useMemo(() => {
-    if (!text) return null
-    if (entities.length === 0) return text
-
-    const segments: React.ReactNode[] = []
-    let lastIndex = 0
-
-    for (const entity of entities) {
-      if (entity.span.start > lastIndex) {
-        segments.push(
-          <span key={`t-${lastIndex}`}>{text.slice(lastIndex, entity.span.start)}</span>
-        )
-      }
-      segments.push(
-        <span key={entity.id} className={`rounded-sm ${ENTITY_STYLES[entity.kind] || ''}`}>
-          {entity.text}
-        </span>
-      )
-      lastIndex = entity.span.end
-    }
-
-    if (lastIndex < text.length) {
-      segments.push(<span key={`t-${lastIndex}`}>{text.slice(lastIndex)}</span>)
-    }
-
-    return segments
-  }, [text, entities])
 
   const confirmedCount = useMemo(
     () => entities.filter(e => e.status === 'confirmed').length,
@@ -211,42 +165,25 @@ export default function App() {
   )
 
   return (
-    <div className="flex h-screen bg-[#0a0a0a]">
-      {/* Main Content */}
-      <main className="flex-1 flex flex-col items-center justify-center p-8">
-        <header className="text-center mb-8">
-          <h1 className="text-3xl font-semibold text-neutral-200 mb-2">
-            Stream
-          </h1>
-          <p className="text-neutral-500 text-sm">
-            Real-time semantic understanding from streaming text
-          </p>
-        </header>
-
-        <div className="relative w-full max-w-xl border border-neutral-800 rounded-xl bg-neutral-900/50 overflow-hidden focus-within:border-neutral-700 transition-colors">
-          <div
-            ref={backdropRef}
-            className="absolute inset-0 p-5 text-lg leading-7 whitespace-pre-wrap break-words overflow-hidden pointer-events-none text-transparent"
-          >
-            {highlights}
-          </div>
-          <textarea
-            ref={textareaRef}
-            value={text}
-            onChange={handleChange}
-            onScroll={handleScroll}
-            onKeyDown={handleKeyDown}
+    <div className="flex h-screen w-full min-w-0 bg-[#0a0a0a] overflow-hidden">
+      {/* Main: full-height, full-width editor; min-w-0 so it can shrink and sidebar stays on screen */}
+      <main className="flex-1 flex min-w-0 flex-col min-h-0">
+        <div className="flex-1 min-h-0 min-w-0 w-full border-r border-neutral-800 focus-within:ring-1 focus-within:ring-neutral-700 focus-within:ring-inset stream-editor">
+          <StreamEditor
+            initialText={text}
+            onFeed={handleFeed}
+            onCommit={handleCommit}
+            entities={entities}
             placeholder="Try: Meeting with john@example.com on Jan 15 about the 10km race..."
-            spellCheck={false}
-            className="relative w-full min-h-[200px] p-5 text-lg leading-7 bg-transparent text-neutral-200 placeholder-neutral-600 resize-none outline-none"
+            className="h-full w-full min-h-0"
           />
         </div>
       </main>
 
-      {/* Sidebar: minimizable */}
+      {/* Sidebar: minimizable, flex-shrink-0 so it never gets pushed off */}
       <aside
         className={cn(
-          'bg-[#111] border-l border-neutral-800 flex flex-col overflow-hidden transition-[width] duration-200',
+          'flex-shrink-0 bg-[#111] border-l border-neutral-800 flex flex-col overflow-hidden transition-[width] duration-200',
           sidebarOpen ? 'w-80' : 'w-12'
         )}
       >
@@ -268,6 +205,36 @@ export default function App() {
 
         {sidebarOpen && (
           <>
+            {/* Settings (Regex / LLM / All) — shadcn Toggle Group on top */}
+            <div className="p-4 border-b border-neutral-800">
+              <h2 className="text-[0.65rem] font-semibold uppercase tracking-wide text-neutral-600 mb-3">
+                Settings
+              </h2>
+              <ToggleGroup
+                type="single"
+                value={recognizerMode}
+                onValueChange={(v) => v && setRecognizerMode(v as RecognizerMode)}
+                variant="outline"
+                size="sm"
+                className="w-full"
+              >
+                <ToggleGroupItem value="regex" aria-label="Regex only" className="flex-1">
+                  Regex
+                </ToggleGroupItem>
+                <ToggleGroupItem value="llm" aria-label="LLM only" className="flex-1">
+                  LLM
+                </ToggleGroupItem>
+                <ToggleGroupItem value="all" aria-label="All" className="flex-1">
+                  All
+                </ToggleGroupItem>
+              </ToggleGroup>
+              <p className="text-[0.65rem] text-neutral-600 mt-1.5">
+                {recognizerMode === 'regex' && 'Quantity, email, date, URL, phone'}
+                {recognizerMode === 'llm' && 'LLM entity extraction on commit'}
+                {recognizerMode === 'all' && 'Regex + LLM'}
+              </p>
+            </div>
+
             {/* Metrics */}
             <div className="p-4 border-b border-neutral-800">
               <h2 className="text-[0.65rem] font-semibold uppercase tracking-wide text-neutral-600 mb-3">
@@ -279,23 +246,6 @@ export default function App() {
                 <Metric label="Confirmed" value={confirmedCount} />
                 <Metric label="Events" value={eventCount} />
               </div>
-            </div>
-
-            {/* Settings */}
-            <div className="p-4 border-b border-neutral-800">
-              <h2 className="text-[0.65rem] font-semibold uppercase tracking-wide text-neutral-600 mb-3">
-                Settings
-              </h2>
-              <label className="flex items-center justify-between gap-3 cursor-pointer">
-                <span className="text-sm text-neutral-400">Regex plugins</span>
-                <Switch
-                  checked={regexEnabled}
-                  onCheckedChange={setRegexEnabled}
-                />
-              </label>
-              <p className="text-[0.65rem] text-neutral-600 mt-1.5">
-                {regexEnabled ? 'Quantity, email, date, URL, phone' : 'LLM only'}
-              </p>
             </div>
 
             {/* Current Entities */}
