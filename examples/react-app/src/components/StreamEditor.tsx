@@ -9,6 +9,7 @@ import {
   keymap,
   placeholder,
   Decoration,
+  type KeyBinding,
 } from '@codemirror/view'
 import {
   EditorState,
@@ -16,7 +17,7 @@ import {
   StateEffect,
   type Extension,
 } from '@codemirror/state'
-import { defaultKeymap, indentWithTab } from '@codemirror/commands'
+import { defaultKeymap, indentWithTab, insertNewline } from '@codemirror/commands'
 import type { Entity } from 'streamsense'
 
 const setEntityDecorations = StateEffect.define<{ from: number; to: number; kind: string }[]>()
@@ -48,6 +49,8 @@ export type StreamEditorProps = {
   initialText?: string
   /** Called when content or selection changes; feed this to the recognizer */
   onFeed: (params: { text: string; cursor: number }) => void
+  /** Called when user commits (e.g. Enter) */
+  onCommit?: () => void
   /** Current entities from Stream; decorations are updated when this changes */
   entities: Entity[]
   placeholder?: string
@@ -57,6 +60,7 @@ export type StreamEditorProps = {
 export function StreamEditor({
   initialText = '',
   onFeed,
+  onCommit,
   entities,
   placeholder: placeholderText = '',
   className,
@@ -64,14 +68,29 @@ export function StreamEditor({
   const containerRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const onFeedRef = useRef(onFeed)
+  const onCommitRef = useRef(onCommit)
   onFeedRef.current = onFeed
+  onCommitRef.current = onCommit
 
-  // Build extensions once
+  // Build extensions once; keymap for Enter -> commit
   const extensionsRef = useRef<Extension[] | null>(null)
   if (extensionsRef.current === null) {
+    const commitKeymap: KeyBinding[] = [
+      {
+        key: 'Enter',
+        run() {
+          onCommitRef.current?.()
+          return true
+        },
+      },
+      {
+        key: 'Shift-Enter',
+        run: insertNewline,
+      },
+    ]
     extensionsRef.current = [
       entityDecorationsField,
-      keymap.of([...defaultKeymap, indentWithTab]),
+      keymap.of([...defaultKeymap, indentWithTab, ...commitKeymap]),
       ...(placeholderText ? [placeholder(placeholderText)] : []),
       EditorView.updateListener.of((update) => {
         if (update.docChanged || update.selectionSet) {

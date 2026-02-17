@@ -96,20 +96,46 @@ export function createRecognizer(options: RecognizerOptions): Recognizer {
       const context = buildContext('realtime')
       const result = await runner.runRealtime(context)
 
-      // Keep previous non-LLM entities that are still in the document; only replace LLM entities
+      // Keep previous entities (regex and LLM) that are still in the document
       const newCandidates = result.upsert ?? []
       const currentText = buffer.getText()
+      const candidateKeys = new Set(newCandidates.map((c) => c.key))
       const existing = store
         .getAll()
-        .filter((e) => !e.key.startsWith('llm:'))
         .filter(
           (e) =>
             e.span.start >= 0 &&
             e.span.end <= currentText.length &&
             currentText.slice(e.span.start, e.span.end) === e.text
         )
-      const existingAsCandidates: EntityCandidate[] = existing.map(
-        (e) => ({
+      const existingAsCandidates: EntityCandidate[] = []
+      for (const e of existing) {
+        if (!candidateKeys.has(e.key)) {
+          candidateKeys.add(e.key)
+          existingAsCandidates.push({
+            key: e.key,
+            kind: e.kind,
+            span: e.span,
+            text: e.text,
+            value: e.value,
+            confidence: e.confidence,
+            status: e.status,
+          })
+        }
+      }
+      let allCandidates = [...newCandidates, ...existingAsCandidates]
+      const keysInBatch = new Set(allCandidates.map((c) => c.key))
+      // Safety net: never remove an entity that is still in the document (e.g. missed by plugin or race)
+      for (const e of store.getAll()) {
+        if (
+          keysInBatch.has(e.key) ||
+          e.span.start < 0 ||
+          e.span.end > currentText.length ||
+          currentText.slice(e.span.start, e.span.end) !== e.text
+        )
+          continue
+        keysInBatch.add(e.key)
+        allCandidates = allCandidates.concat({
           key: e.key,
           kind: e.kind,
           span: e.span,
@@ -118,8 +144,7 @@ export function createRecognizer(options: RecognizerOptions): Recognizer {
           confidence: e.confidence,
           status: e.status,
         })
-      )
-      const allCandidates = [...newCandidates, ...existingAsCandidates]
+      }
       const changes = store.reconcile(allCandidates)
 
       // Emit removal events
