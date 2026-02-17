@@ -163,7 +163,8 @@ Rules:
 - start and end must be valid indices into the user's text; text must equal the substring from start to end.
 - Extract every occurrence; do not merge or skip. Overlapping spans are allowed only if they represent different entities (e.g. "10 km" as quantity and "10 km run" as topic).
 - If nothing matches, return {"entities":[]}.
-- Use only the user's text—no hallucinated content.`
+- Use only the user's text—no hallucinated content.
+- For streaming: you may output one JSON object per line (NDJSON), e.g. {"start":0,"end":4,"kind":"person","text":"John"} per line, so highlights can appear as you go. Or output a single {"entities":[...]} object.`
 
 function buildCandidate(
   validated: LlmEntity,
@@ -267,6 +268,25 @@ export function createLlmPlugin(options: LlmPluginOptions = {}): Plugin {
           const decoder = new TextDecoder()
           let contentAccum = ''
           let buffer = ''
+          /** Process complete NDJSON lines from accumulated content; return remaining (incomplete) string */
+          const processCompleteLines = (acc: string): string => {
+            const lines = acc.split('\n')
+            const incomplete = lines.pop() ?? ''
+            for (const line of lines) {
+              const trimmed = line.trim()
+              if (!trimmed) continue
+              try {
+                const item = JSON.parse(trimmed) as unknown
+                const validated = validateLlmEntity(item, textLen)
+                if (validated) {
+                  pushCandidate(buildCandidateSnapped(validated, inputText, textOffset))
+                }
+              } catch {
+                // not a complete entity line, skip
+              }
+            }
+            return incomplete
+          }
           while (true) {
             if (ctx.signal?.aborted) return { upsert }
             const { done, value } = await reader.read()
@@ -280,7 +300,10 @@ export function createLlmPlugin(options: LlmPluginOptions = {}): Plugin {
               try {
                 const chunk = JSON.parse(trimmed) as { choices?: Array<{ delta?: { content?: string } }> }
                 const part = chunk.choices?.[0]?.delta?.content
-                if (part) contentAccum += part
+                if (part) {
+                  contentAccum += part
+                  contentAccum = processCompleteLines(contentAccum)
+                }
               } catch {
                 // ignore malformed SSE
               }
@@ -296,13 +319,17 @@ export function createLlmPlugin(options: LlmPluginOptions = {}): Plugin {
                 ? (parsed as { entities: unknown[] }).entities
                 : []
           } catch {
+            const seenKeys = new Set(upsert.map((c) => c.key))
             const ndjson = raw.split('\n').filter(Boolean)
             for (const line of ndjson) {
               try {
-                const item = JSON.parse(line)
+                const item = JSON.parse(line) as unknown
                 const validated = validateLlmEntity(item, textLen)
-                if (validated) {
-                  pushCandidate(buildCandidateSnapped(validated, inputText, textOffset))
+                if (!validated) continue
+                const c = buildCandidateSnapped(validated, inputText, textOffset)
+                if (!seenKeys.has(c.key)) {
+                  seenKeys.add(c.key)
+                  pushCandidate(c)
                 }
               } catch {
                 // skip line
@@ -310,10 +337,15 @@ export function createLlmPlugin(options: LlmPluginOptions = {}): Plugin {
             }
             return { upsert }
           }
+          const seenKeys = new Set(upsert.map((c) => c.key))
           for (const item of arr) {
             const validated = validateLlmEntity(item, textLen)
             if (!validated) continue
-            pushCandidate(buildCandidateSnapped(validated, inputText, textOffset))
+            const c = buildCandidateSnapped(validated, inputText, textOffset)
+            if (!seenKeys.has(c.key)) {
+              seenKeys.add(c.key)
+              pushCandidate(c)
+            }
           }
           return { upsert }
         }
