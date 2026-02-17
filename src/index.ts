@@ -1,5 +1,5 @@
 /**
- * StreamSense
+ * Stream
  * Real-time semantic understanding from streaming text
  */
 
@@ -36,6 +36,8 @@ export type {
   RemoveEvent,
   DiagnosticEvent,
   DiagnosticSeverity,
+  StreamEvent,
+  /** @deprecated Use StreamEvent */
   StreamSenseEvent,
   EventHandlers,
 

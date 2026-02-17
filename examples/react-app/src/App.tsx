@@ -1,5 +1,9 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { createRecognizer, plugins, type Entity, type Recognizer } from 'streamsense'
+import { createLlmPlugin } from './llmPlugin'
+import { Switch } from '@/components/ui/switch'
+import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 
 const ENTITY_STYLES: Record<string, string> = {
   quantity: 'bg-blue-500/25 shadow-[0_2px_0_#3b82f6]',
@@ -7,6 +11,9 @@ const ENTITY_STYLES: Record<string, string> = {
   datetime: 'bg-yellow-500/25 shadow-[0_2px_0_#eab308]',
   url: 'bg-purple-500/25 shadow-[0_2px_0_#a855f7]',
   phone: 'bg-pink-500/25 shadow-[0_2px_0_#ec4899]',
+  person: 'bg-amber-500/25 shadow-[0_2px_0_#f59e0b]',
+  place: 'bg-teal-500/25 shadow-[0_2px_0_#14b8a6]',
+  custom: 'bg-slate-500/25 shadow-[0_2px_0_#64748b]',
 }
 
 const KIND_COLORS: Record<string, string> = {
@@ -15,15 +22,10 @@ const KIND_COLORS: Record<string, string> = {
   datetime: 'bg-yellow-500',
   url: 'bg-purple-500',
   phone: 'bg-pink-500',
+  person: 'bg-amber-500',
+  place: 'bg-teal-500',
+  custom: 'bg-slate-500',
 }
-
-const LEGEND = [
-  { kind: 'quantity', label: 'Quantity' },
-  { kind: 'email', label: 'Email' },
-  { kind: 'datetime', label: 'DateTime' },
-  { kind: 'url', label: 'URL' },
-  { kind: 'phone', label: 'Phone' },
-]
 
 type EventLog = {
   id: number
@@ -41,11 +43,15 @@ export default function App() {
   const [entities, setEntities] = useState<Entity[]>([])
   const [events, setEvents] = useState<EventLog[]>([])
   const [eventCount, setEventCount] = useState(0)
-  
+  const [regexEnabled, setRegexEnabled] = useState(true)
+  const [sidebarOpen, setSidebarOpen] = useState(true)
+
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const backdropRef = useRef<HTMLDivElement>(null)
   const recognizerRef = useRef<Recognizer | null>(null)
-  
+  const textRef = useRef(text)
+  textRef.current = text
+
   // Use refs for mutable state that doesn't need to trigger renders immediately
   const entitiesMapRef = useRef<Map<string, Entity>>(new Map())
   const eventsRef = useRef<EventLog[]>([])
@@ -71,7 +77,7 @@ export default function App() {
     })
   }, [])
 
-  // Initialize recognizer once
+  // Recreate recognizer when regex toggle changes; re-feed current text
   useEffect(() => {
     const logEvent = (type: EventLog['type'], action: string, detail: string) => {
       const time = new Date().toLocaleTimeString('en-US', {
@@ -80,22 +86,28 @@ export default function App() {
         minute: '2-digit',
         second: '2-digit',
       })
-      
       eventsRef.current = [
         { id: eventIdRef.current++, type, action, detail, time },
-        ...eventsRef.current.slice(0, MAX_EVENTS - 1)
+        ...eventsRef.current.slice(0, MAX_EVENTS - 1),
       ]
       eventCountRef.current++
     }
 
+    const pluginList = [
+      ...(regexEnabled
+        ? [
+            plugins.quantity(),
+            plugins.email(),
+            plugins.datetime(),
+            plugins.url(),
+            plugins.phone(),
+          ]
+        : []),
+      createLlmPlugin(),
+    ]
+
     const recognizer = createRecognizer({
-      plugins: [
-        plugins.quantity(),
-        plugins.email(),
-        plugins.datetime(),
-        plugins.url(),
-        plugins.phone(),
-      ],
+      plugins: pluginList,
       schedule: {
         realtimeMs: 100,
         commitAfterMs: 600,
@@ -126,11 +138,22 @@ export default function App() {
 
     recognizerRef.current = recognizer
 
+    // Re-feed current text so the new recognizer state matches
+    const currentText = textRef.current
+    if (currentText) {
+      recognizer.feed({ text: currentText, cursor: currentText.length })
+      if (!regexEnabled) recognizer.commit('manual')
+    }
+
     return () => {
       recognizer.destroy()
       recognizerRef.current = null
+      entitiesMapRef.current.clear()
+      eventsRef.current = []
+      eventCountRef.current = 0
+      scheduleUpdate()
     }
-  }, [scheduleUpdate])
+  }, [scheduleUpdate, regexEnabled])
 
   const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newText = e.target.value
@@ -192,8 +215,8 @@ export default function App() {
       {/* Main Content */}
       <main className="flex-1 flex flex-col items-center justify-center p-8">
         <header className="text-center mb-8">
-          <h1 className="text-3xl font-semibold bg-gradient-to-r from-blue-500 to-purple-500 bg-clip-text text-transparent mb-2">
-            StreamSense
+          <h1 className="text-3xl font-semibold text-neutral-200 mb-2">
+            Stream
           </h1>
           <p className="text-neutral-500 text-sm">
             Real-time semantic understanding from streaming text
@@ -218,59 +241,92 @@ export default function App() {
             className="relative w-full min-h-[200px] p-5 text-lg leading-7 bg-transparent text-neutral-200 placeholder-neutral-600 resize-none outline-none"
           />
         </div>
-
-        <div className="flex justify-center gap-5 mt-6 flex-wrap">
-          {LEGEND.map(({ kind, label }) => (
-            <div key={kind} className="flex items-center gap-1.5 text-sm text-neutral-500">
-              <span className={`w-2 h-2 rounded-full ${KIND_COLORS[kind]}`} />
-              {label}
-            </div>
-          ))}
-        </div>
       </main>
 
-      {/* Side Panel */}
-      <aside className="w-80 bg-[#111] border-l border-neutral-800 flex flex-col overflow-hidden">
-        {/* Metrics */}
-        <div className="p-4 border-b border-neutral-800">
-          <h2 className="text-[0.65rem] font-semibold uppercase tracking-wide text-neutral-600 mb-3">
-            Metrics
-          </h2>
-          <div className="grid grid-cols-2 gap-2">
-            <Metric label="Characters" value={text.length} />
-            <Metric label="Entities" value={entities.length} />
-            <Metric label="Confirmed" value={confirmedCount} />
-            <Metric label="Events" value={eventCount} />
-          </div>
-        </div>
-
-        {/* Current Entities */}
-        <div className="p-4 border-b border-neutral-800">
-          <h2 className="text-[0.65rem] font-semibold uppercase tracking-wide text-neutral-600 mb-3">
-            Current Entities
-          </h2>
-          <div className="max-h-44 overflow-y-auto space-y-1.5">
-            {entities.length === 0 ? (
-              <p className="text-neutral-600 text-xs italic">No entities detected</p>
+      {/* Sidebar: minimizable */}
+      <aside
+        className={cn(
+          'bg-[#111] border-l border-neutral-800 flex flex-col overflow-hidden transition-[width] duration-200',
+          sidebarOpen ? 'w-80' : 'w-12'
+        )}
+      >
+        {/* Toggle */}
+        <div className="p-2 border-b border-neutral-800 flex items-center justify-center">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setSidebarOpen((v) => !v)}
+            aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+          >
+            {sidebarOpen ? (
+              <span className="text-neutral-400">‹</span>
             ) : (
-              entities.map(entity => (
-                <EntityItem key={entity.id} entity={entity} />
-              ))
+              <span className="text-neutral-400">›</span>
             )}
-          </div>
+          </Button>
         </div>
 
-        {/* Event Stream */}
-        <div className="flex-1 p-4 overflow-hidden flex flex-col min-h-0">
-          <h2 className="text-[0.65rem] font-semibold uppercase tracking-wide text-neutral-600 mb-3">
-            Event Stream
-          </h2>
-          <div className="flex-1 overflow-y-auto space-y-1 font-mono text-[0.65rem]">
-            {events.map(event => (
-              <EventItem key={event.id} event={event} />
-            ))}
-          </div>
-        </div>
+        {sidebarOpen && (
+          <>
+            {/* Metrics */}
+            <div className="p-4 border-b border-neutral-800">
+              <h2 className="text-[0.65rem] font-semibold uppercase tracking-wide text-neutral-600 mb-3">
+                Metrics
+              </h2>
+              <div className="grid grid-cols-2 gap-2">
+                <Metric label="Characters" value={text.length} />
+                <Metric label="Entities" value={entities.length} />
+                <Metric label="Confirmed" value={confirmedCount} />
+                <Metric label="Events" value={eventCount} />
+              </div>
+            </div>
+
+            {/* Settings */}
+            <div className="p-4 border-b border-neutral-800">
+              <h2 className="text-[0.65rem] font-semibold uppercase tracking-wide text-neutral-600 mb-3">
+                Settings
+              </h2>
+              <label className="flex items-center justify-between gap-3 cursor-pointer">
+                <span className="text-sm text-neutral-400">Regex plugins</span>
+                <Switch
+                  checked={regexEnabled}
+                  onCheckedChange={setRegexEnabled}
+                />
+              </label>
+              <p className="text-[0.65rem] text-neutral-600 mt-1.5">
+                {regexEnabled ? 'Quantity, email, date, URL, phone' : 'LLM only'}
+              </p>
+            </div>
+
+            {/* Current Entities */}
+            <div className="p-4 border-b border-neutral-800">
+              <h2 className="text-[0.65rem] font-semibold uppercase tracking-wide text-neutral-600 mb-3">
+                Current Entities
+              </h2>
+              <div className="max-h-44 overflow-y-auto space-y-1.5">
+                {entities.length === 0 ? (
+                  <p className="text-neutral-600 text-xs italic">No entities detected</p>
+                ) : (
+                  entities.map(entity => (
+                    <EntityItem key={entity.id} entity={entity} />
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Event Stream */}
+            <div className="flex-1 p-4 overflow-hidden flex flex-col min-h-0">
+              <h2 className="text-[0.65rem] font-semibold uppercase tracking-wide text-neutral-600 mb-3">
+                Event Stream
+              </h2>
+              <div className="flex-1 overflow-y-auto space-y-1 font-mono text-[0.65rem]">
+                {events.map(event => (
+                  <EventItem key={event.id} event={event} />
+                ))}
+              </div>
+            </div>
+          </>
+        )}
       </aside>
     </div>
   )

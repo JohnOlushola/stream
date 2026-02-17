@@ -1,8 +1,8 @@
-# StreamSense
+# Stream
 
 > Real-time semantic understanding from streaming text
 
-StreamSense is a small library that turns a stream of text into a stream of meaning. You feed it text incrementally, and it emits structured semantic events like detected entities, removed entities, and diagnostics.
+Stream is a small library that turns a stream of text into a stream of meaning. You feed it text incrementally, and it emits structured semantic events like detected entities, removed entities, and diagnostics.
 
 ## Mental Model
 
@@ -97,7 +97,7 @@ const myPlugin = {
 
 ## Examples
 
-Both examples feature a centered input with real-time highlighting and a side panel showing metrics, detected entities, and a live event stream.
+Both examples feature a centered input with real-time highlighting and a side panel showing metrics, detected entities, and a live event stream. The React example includes an optional LLM plugin (commit pass) — set `VITE_OPENAI_API_KEY` to enable.
 
 ### Vanilla HTML/JS/CSS
 

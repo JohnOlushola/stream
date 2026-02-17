@@ -1,5 +1,5 @@
 {
-  "name": "streamsense-react-example",
+  "name": "stream-react-example",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -9,9 +9,13 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@radix-ui/react-switch": "^1.2.6",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "streamsense": "file:../.."
+    "streamsense": "file:../..",
+    "tailwind-merge": "^3.4.1"
   },
   "devDependencies": {
     "@types/react": "^18.2.0",
