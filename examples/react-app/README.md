@@ -23,11 +23,20 @@ Without the key, the app runs with regex plugins only.
 
 ## Features
 
-- Centered input with real-time entity highlighting
-- Side panel showing:
+- Full-width, full-height editor (CodeMirror 6) with real-time entity highlighting
+- **Settings**: Toggle Regex only / LLM only / All (regex + LLM) for recognition
+- Collapsible side panel:
+  - **Settings**: Regex / LLM / All toggle
   - **Metrics**: Character count, entity count, confirmed count, event count
   - **Current Entities**: List of detected entities with confidence scores
   - **Event Stream**: Live log of all Stream events
+
+## Tests
+
+```bash
+npm run test:run
+npm run test:coverage
+```
 
 ## Try It
 
