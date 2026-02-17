@@ -74,6 +74,18 @@ export type EntityCandidate = Omit<Entity, 'id'> & { key: string }
 export type PluginMode = 'realtime' | 'commit'
 
 /**
+ * Optional extensions to plugin context for streaming/incremental plugins.
+ * Provided by the engine when running plugins; plugins can use them to push
+ * entities as they are produced (e.g. during LLM stream) and to respect abort.
+ */
+export type PluginContextExtensions = {
+  /** Callback to push a single entity immediately (streaming). When used, plugin should still return final PluginResult for reconcile/removals. */
+  onEntity?: (candidate: EntityCandidate) => void
+  /** AbortSignal to cancel in-flight work when the user types again or a new run starts. */
+  signal?: AbortSignal
+}
+
+/**
  * Context provided to plugins during execution
  */
 export type PluginContext = {
@@ -90,7 +102,7 @@ export type PluginContext = {
   entities: Entity[]
   /** Current cursor position */
   cursor: number
-}
+} & PluginContextExtensions
 
 /**
  * Result returned by a plugin

@@ -1,14 +1,24 @@
 /**
  * LLM plugin for Stream (React example)
- * Runs on commit only. Calls an OpenAI-compatible API to extract entities.
+ * Calls an OpenAI-compatible API to extract entities.
  * Set VITE_OPENAI_API_KEY to enable.
  *
- * Validation: we expect a JSON array of { start, end, kind, text }.
- * - Option 1 (OpenAI): response_format with json_schema so the API returns the shape we want.
- * - Option 2 (all): validate each item in code (type + bounds); invalid items are dropped.
+ * Options:
+ * - mode: 'realtime' (window-only, cursor-aware) or 'commit' (full text). Default 'commit'.
+ * - streaming: use streaming API and push entities via ctx.onEntity as they arrive. Default true.
+ *
+ * Realtime uses ctx.window (fixed token cost); commit uses full ctx.text.
+ * Respects ctx.signal for abort when the user types again.
  */
 
 import type { Plugin, PluginContext, PluginResult, EntityCandidate, EntityKind } from 'streamsense'
+
+export type LlmPluginOptions = {
+  /** When to run: realtime (window-only) or commit (full text). Default 'commit'. */
+  mode?: 'realtime' | 'commit'
+  /** Use streaming API and push entities incrementally via ctx.onEntity. Default true. */
+  streaming?: boolean
+}
 
 const API_KEY = import.meta.env.VITE_OPENAI_API_KEY as string | undefined
 const API_BASE = (import.meta.env.VITE_OPENAI_API_BASE as string) || 'https://api.openai.com/v1'
@@ -124,22 +134,48 @@ Rules:
 - If nothing matches, return {"entities":[]}.
 - Use only the user's text—no hallucinated content.`
 
-export function createLlmPlugin(): Plugin {
+function buildCandidate(
+  validated: LlmEntity,
+  entityKind: EntityKind,
+  textSlice: string
+): EntityCandidate {
+  const { start, end, kind } = validated
+  const key = `llm:${entityKind}:${start}:${end}:${textSlice}`
+  return {
+    key,
+    kind: entityKind,
+    span: { start, end },
+    text: textSlice,
+    value: { source: 'llm', rawKind: kind },
+    confidence: 0.85,
+    status: 'confirmed',
+  }
+}
+
+export function createLlmPlugin(options: LlmPluginOptions = {}): Plugin {
+  const { mode = 'commit', streaming = true } = options
+
   return {
     name: 'llm',
-    mode: 'commit',
-    priority: 200, // after built-in plugins
+    mode,
+    priority: 200,
 
     async run(ctx: PluginContext): Promise<PluginResult> {
-      if (!API_KEY || !ctx.text.trim()) return { upsert: [] }
+      const useWindow = ctx.mode === 'realtime'
+      const inputText = useWindow ? ctx.window.text : ctx.text
+      const textOffset = useWindow ? ctx.window.offset : 0
+
+      if (!API_KEY || !inputText.trim()) return { upsert: [] }
+      if (ctx.signal?.aborted) return { upsert: [] }
 
       const messages: Array<{ role: 'system' | 'user'; content: string }> = [
         { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: ctx.text },
+        { role: 'user', content: inputText },
       ]
 
       try {
         const res = await fetch(`${API_BASE}/chat/completions`, {
+          signal: ctx.signal,
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -150,7 +186,8 @@ export function createLlmPlugin(): Plugin {
             messages,
             max_tokens: 1024,
             temperature: 0,
-            ...(IS_OPENAI && {
+            stream: streaming,
+            ...(IS_OPENAI && !streaming && {
               response_format: {
                 type: 'json_schema',
                 json_schema: {
@@ -169,6 +206,87 @@ export function createLlmPlugin(): Plugin {
           return { upsert: [] }
         }
 
+        const textLen = inputText.length
+        const upsert: EntityCandidate[] = []
+        const pushCandidate = (c: EntityCandidate) => {
+          upsert.push(c)
+          ctx.onEntity?.(c)
+        }
+
+        if (streaming && res.body) {
+          const reader = res.body.getReader()
+          const decoder = new TextDecoder()
+          let contentAccum = ''
+          let buffer = ''
+          while (true) {
+            if (ctx.signal?.aborted) return { upsert }
+            const { done, value } = await reader.read()
+            if (done) break
+            buffer += decoder.decode(value, { stream: true })
+            const lines = buffer.split('\n')
+            buffer = lines.pop() ?? ''
+            for (const line of lines) {
+              const trimmed = line.replace(/^data:\s*/, '').trim()
+              if (trimmed === '[DONE]' || !trimmed) continue
+              try {
+                const chunk = JSON.parse(trimmed) as { choices?: Array<{ delta?: { content?: string } }> }
+                const part = chunk.choices?.[0]?.delta?.content
+                if (part) contentAccum += part
+              } catch {
+                // ignore malformed SSE
+              }
+            }
+          }
+          const raw = contentAccum.replace(/^```\w*\n?|\n?```$/g, '').trim()
+          let arr: unknown[] = []
+          try {
+            const parsed = JSON.parse(raw)
+            arr = Array.isArray(parsed)
+              ? parsed
+              : typeof parsed === 'object' && parsed !== null && 'entities' in parsed && Array.isArray((parsed as { entities: unknown[] }).entities)
+                ? (parsed as { entities: unknown[] }).entities
+                : []
+          } catch {
+            const ndjson = raw.split('\n').filter(Boolean)
+            for (const line of ndjson) {
+              try {
+                const item = JSON.parse(line)
+                const validated = validateLlmEntity(item, textLen)
+                if (validated) {
+                  const { start, end, kind, text } = validated
+                  const globalStart = start + textOffset
+                  const globalEnd = end + textOffset
+                  const textSlice = text || inputText.slice(start, end)
+                  const candidate = buildCandidate(
+                    { ...validated, start: globalStart, end: globalEnd },
+                    toEntityKind(kind),
+                    textSlice
+                  )
+                  pushCandidate(candidate)
+                }
+              } catch {
+                // skip line
+              }
+            }
+            return { upsert }
+          }
+          for (const item of arr) {
+            const validated = validateLlmEntity(item, textLen)
+            if (!validated) continue
+            const { start, end, kind, text } = validated
+            const globalStart = start + textOffset
+            const globalEnd = end + textOffset
+            const textSlice = text || inputText.slice(start, end)
+            const candidate = buildCandidate(
+              { ...validated, start: globalStart, end: globalEnd },
+              toEntityKind(kind),
+              textSlice
+            )
+            pushCandidate(candidate)
+          }
+          return { upsert }
+        }
+
         const data = await res.json()
         const content = data?.choices?.[0]?.message?.content?.trim() ?? ''
         const raw = content.replace(/^```\w*\n?|\n?```$/g, '').trim()
@@ -184,29 +302,24 @@ export function createLlmPlugin(): Plugin {
           : typeof parsed === 'object' && parsed !== null && 'entities' in parsed && Array.isArray((parsed as { entities: unknown[] }).entities)
             ? (parsed as { entities: unknown[] }).entities
             : []
-        if (arr.length === 0) return { upsert: [] }
-
-        const textLen = ctx.text.length
-        const upsert: EntityCandidate[] = []
         for (const item of arr) {
           const validated = validateLlmEntity(item, textLen)
           if (!validated) continue
           const { start, end, kind, text } = validated
-          const textSlice = text || ctx.text.slice(start, end)
+          const globalStart = start + textOffset
+          const globalEnd = end + textOffset
+          const textSlice = text || inputText.slice(start, end)
           const entityKind = toEntityKind(kind)
-          const key = `llm:${entityKind}:${start}:${end}:${textSlice}`
-          upsert.push({
-            key,
-            kind: entityKind,
-            span: { start, end },
-            text: textSlice,
-            value: { source: 'llm', rawKind: kind },
-            confidence: 0.85,
-            status: 'confirmed',
-          })
+          const candidate = buildCandidate(
+            { ...validated, start: globalStart, end: globalEnd },
+            entityKind,
+            textSlice
+          )
+          pushCandidate(candidate)
         }
         return { upsert }
       } catch (e) {
+        if ((e as Error).name === 'AbortError') return { upsert }
         console.warn('[llm-plugin]', e)
         return { upsert: [] }
       }

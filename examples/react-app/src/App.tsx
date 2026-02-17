@@ -26,6 +26,7 @@ type EventLog = {
 }
 
 type RecognizerMode = 'regex' | 'llm' | 'all'
+type LlmTiming = 'commit' | 'realtime'
 
 // Keep events in a ref to avoid re-renders, sync to state periodically
 const MAX_EVENTS = 100
@@ -36,6 +37,7 @@ export default function App() {
   const [events, setEvents] = useState<EventLog[]>([])
   const [eventCount, setEventCount] = useState(0)
   const [recognizerMode, setRecognizerMode] = useState<RecognizerMode>('all')
+  const [llmTiming, setLlmTiming] = useState<LlmTiming>('commit')
   const [sidebarOpen, setSidebarOpen] = useState(true)
 
   const recognizerRef = useRef<Recognizer | null>(null)
@@ -90,17 +92,23 @@ export default function App() {
       plugins.url(),
       plugins.phone(),
     ]
+    const llmPlugin =
+      recognizerMode === 'regex'
+        ? null
+        : createLlmPlugin({ mode: llmTiming, streaming: true })
+
     const pluginList =
       recognizerMode === 'regex'
         ? regexPlugins
         : recognizerMode === 'llm'
-          ? [createLlmPlugin()]
-          : [...regexPlugins, createLlmPlugin()]
+          ? [llmPlugin!]
+          : [...regexPlugins, llmPlugin!]
 
+    const useRealtimeLlm = (recognizerMode === 'llm' || recognizerMode === 'all') && llmTiming === 'realtime'
     const recognizer = createRecognizer({
       plugins: pluginList,
       schedule: {
-        realtimeMs: 100,
+        realtimeMs: useRealtimeLlm ? 400 : 100,
         commitAfterMs: 600,
       },
     })
@@ -133,7 +141,7 @@ export default function App() {
     const currentText = textRef.current
     if (currentText) {
       recognizer.feed({ text: currentText, cursor: currentText.length })
-      if (recognizerMode === 'llm' || recognizerMode === 'all')
+      if ((recognizerMode === 'llm' || recognizerMode === 'all') && llmTiming === 'commit')
         recognizer.commit('manual')
     }
 
@@ -145,7 +153,7 @@ export default function App() {
       eventCountRef.current = 0
       scheduleUpdate()
     }
-  }, [scheduleUpdate, recognizerMode])
+  }, [scheduleUpdate, recognizerMode, llmTiming])
 
   const handleFeed = useCallback((params: { text: string; cursor: number }) => {
     setText(params.text)
@@ -228,10 +236,30 @@ export default function App() {
                   All
                 </ToggleGroupItem>
               </ToggleGroup>
+              {(recognizerMode === 'llm' || recognizerMode === 'all') && (
+                <>
+                  <p className="text-[0.65rem] text-neutral-500 mt-2 mb-1">LLM when</p>
+                  <ToggleGroup
+                    type="single"
+                    value={llmTiming}
+                    onValueChange={(v) => v && setLlmTiming(v as LlmTiming)}
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                  >
+                    <ToggleGroupItem value="commit" aria-label="On commit" className="flex-1">
+                      Commit
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="realtime" aria-label="Realtime" className="flex-1">
+                      Realtime
+                    </ToggleGroupItem>
+                  </ToggleGroup>
+                </>
+              )}
               <p className="text-[0.65rem] text-neutral-600 mt-1.5">
                 {recognizerMode === 'regex' && 'Quantity, email, date, URL, phone'}
-                {recognizerMode === 'llm' && 'LLM entity extraction on commit'}
-                {recognizerMode === 'all' && 'Regex + LLM'}
+                {recognizerMode === 'llm' && (llmTiming === 'commit' ? 'LLM on pause/Enter' : 'LLM on window (debounced)')}
+                {recognizerMode === 'all' && (llmTiming === 'commit' ? 'Regex + LLM on pause/Enter' : 'Regex + LLM on window')}
               </p>
             </div>
 

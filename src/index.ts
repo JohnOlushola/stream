@@ -29,6 +29,7 @@ export type {
   Plugin,
   PluginMode,
   PluginContext,
+  PluginContextExtensions,
   PluginResult,
 
   // Event types
