@@ -120,7 +120,7 @@ export function createRunner(
     /**
      * Run realtime plugins
      */
-    async runRealtime(context: Omit<PluginContext, 'mode'>): Promise<PluginResult> {
+    async runRealtime(context: PluginContext | Omit<PluginContext, 'mode'>): Promise<PluginResult> {
       const fullContext: PluginContext = { ...context, mode: 'realtime' }
       const result = await runPlugins(realtimePlugins, fullContext)
 
@@ -134,7 +134,7 @@ export function createRunner(
     /**
      * Run commit plugins (includes realtime plugins with lower threshold)
      */
-    async runCommit(context: Omit<PluginContext, 'mode'>): Promise<PluginResult> {
+    async runCommit(context: PluginContext | Omit<PluginContext, 'mode'>): Promise<PluginResult> {
       const fullContext: PluginContext = { ...context, mode: 'commit' }
 
       // Run both realtime and commit plugins during commit

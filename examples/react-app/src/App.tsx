@@ -26,6 +26,7 @@ type EventLog = {
 }
 
 type RecognizerMode = 'regex' | 'llm' | 'all'
+type LlmTiming = 'commit' | 'realtime'
 
 // Keep events in a ref to avoid re-renders, sync to state periodically
 const MAX_EVENTS = 100
@@ -36,6 +37,8 @@ export default function App() {
   const [events, setEvents] = useState<EventLog[]>([])
   const [eventCount, setEventCount] = useState(0)
   const [recognizerMode, setRecognizerMode] = useState<RecognizerMode>('all')
+  const [llmTiming, setLlmTiming] = useState<LlmTiming>('commit')
+  const [windowSize, setWindowSize] = useState(500)
   const [sidebarOpen, setSidebarOpen] = useState(true)
 
   const recognizerRef = useRef<Recognizer | null>(null)
@@ -90,17 +93,24 @@ export default function App() {
       plugins.url(),
       plugins.phone(),
     ]
+    const llmPlugin =
+      recognizerMode === 'regex'
+        ? null
+        : createLlmPlugin({ mode: llmTiming, streaming: true })
+
     const pluginList =
       recognizerMode === 'regex'
         ? regexPlugins
         : recognizerMode === 'llm'
-          ? [createLlmPlugin()]
-          : [...regexPlugins, createLlmPlugin()]
+          ? [llmPlugin!]
+          : [...regexPlugins, llmPlugin!]
 
+    const useRealtimeLlm = (recognizerMode === 'llm' || recognizerMode === 'all') && llmTiming === 'realtime'
     const recognizer = createRecognizer({
       plugins: pluginList,
+      windowSize,
       schedule: {
-        realtimeMs: 100,
+        realtimeMs: useRealtimeLlm ? 400 : 100,
         commitAfterMs: 600,
       },
     })
@@ -133,7 +143,7 @@ export default function App() {
     const currentText = textRef.current
     if (currentText) {
       recognizer.feed({ text: currentText, cursor: currentText.length })
-      if (recognizerMode === 'llm' || recognizerMode === 'all')
+      if ((recognizerMode === 'llm' || recognizerMode === 'all') && llmTiming === 'commit')
         recognizer.commit('manual')
     }
 
@@ -145,7 +155,7 @@ export default function App() {
       eventCountRef.current = 0
       scheduleUpdate()
     }
-  }, [scheduleUpdate, recognizerMode])
+  }, [scheduleUpdate, recognizerMode, llmTiming, windowSize])
 
   const handleFeed = useCallback((params: { text: string; cursor: number }) => {
     setText(params.text)
@@ -168,15 +178,24 @@ export default function App() {
     <div className="flex h-screen w-full min-w-0 bg-[#0a0a0a] overflow-hidden">
       {/* Main: full-height, full-width editor; min-w-0 so it can shrink and sidebar stays on screen */}
       <main className="flex-1 flex min-w-0 flex-col min-h-0">
-        <div className="flex-1 min-h-0 min-w-0 w-full border-r border-neutral-800 focus-within:ring-1 focus-within:ring-neutral-700 focus-within:ring-inset stream-editor">
+        <div className="flex-1 min-h-0 min-w-0 w-full border-r border-neutral-800 focus-within:ring-1 focus-within:ring-neutral-700 focus-within:ring-inset stream-editor relative">
           <StreamEditor
             initialText={text}
             onFeed={handleFeed}
-            onCommit={handleCommit}
             entities={entities}
             placeholder="Try: Meeting with john@example.com on Jan 15 about the 10km race..."
             className="h-full w-full min-h-0"
           />
+          {/* Floating submit button */}
+          <div className="absolute bottom-4 right-4 z-10">
+            <Button
+              onClick={handleCommit}
+              className="bg-neutral-200 text-neutral-900 hover:bg-neutral-300 shadow-lg"
+              size="default"
+            >
+              Submit
+            </Button>
+          </div>
         </div>
       </main>
 
@@ -228,11 +247,46 @@ export default function App() {
                   All
                 </ToggleGroupItem>
               </ToggleGroup>
+              {(recognizerMode === 'llm' || recognizerMode === 'all') && (
+                <>
+                  <p className="text-[0.65rem] text-neutral-500 mt-2 mb-1">LLM when</p>
+                  <ToggleGroup
+                    type="single"
+                    value={llmTiming}
+                    onValueChange={(v) => v && setLlmTiming(v as LlmTiming)}
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                  >
+                    <ToggleGroupItem value="commit" aria-label="On commit" className="flex-1">
+                      Commit
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="realtime" aria-label="Realtime" className="flex-1">
+                      Realtime
+                    </ToggleGroupItem>
+                  </ToggleGroup>
+                </>
+              )}
               <p className="text-[0.65rem] text-neutral-600 mt-1.5">
                 {recognizerMode === 'regex' && 'Quantity, email, date, URL, phone'}
-                {recognizerMode === 'llm' && 'LLM entity extraction on commit'}
-                {recognizerMode === 'all' && 'Regex + LLM'}
+                {recognizerMode === 'llm' && (llmTiming === 'commit' ? 'LLM on commit' : 'LLM on window (debounced)')}
+                {recognizerMode === 'all' && (llmTiming === 'commit' ? 'Regex + LLM on commit' : 'Regex + LLM on window')}
               </p>
+              <div className="mt-3 pt-3 border-t border-neutral-800">
+                <label className="text-[0.65rem] text-neutral-500 mb-1.5 block">Window size (chars)</label>
+                <input
+                  type="number"
+                  min="100"
+                  max="2000"
+                  step="50"
+                  value={windowSize}
+                  onChange={(e) => setWindowSize(Math.max(100, Math.min(2000, parseInt(e.target.value) || 500)))}
+                  className="w-full px-2 py-1.5 bg-neutral-900 border border-neutral-700 rounded text-sm text-neutral-200 focus:outline-none focus:ring-1 focus:ring-neutral-500"
+                />
+                <p className="text-[0.6rem] text-neutral-600 mt-1">
+                  Cursor-centered analysis window ({windowSize} chars)
+                </p>
+              </div>
             </div>
 
             {/* Metrics */}

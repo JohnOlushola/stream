@@ -30,7 +30,7 @@ describe('App', () => {
     render(<App />)
     const llmRadio = screen.getByRole('radio', { name: /llm only/i })
     await user.click(llmRadio)
-    expect(screen.getByText(/LLM entity extraction on commit/)).toBeInTheDocument()
+    expect(screen.getByText(/LLM on commit/)).toBeInTheDocument()
   })
 
   it('can collapse and expand sidebar', async () => {

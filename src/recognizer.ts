@@ -11,6 +11,7 @@ import type {
   CommitReason,
   EventHandlers,
   PluginContext,
+  EntityCandidate,
 } from './types.js'
 import { createBuffer } from './buffer.js'
 import { createStore } from './store.js'
@@ -51,17 +52,34 @@ export function createRecognizer(options: RecognizerOptions): Recognizer {
   })
 
   let isDestroyed = false
+  /** AbortController for the current run; aborted when a new run starts (so streaming plugins can cancel). */
+  let currentRunController: AbortController | null = null
 
   /**
-   * Build plugin context from current state
+   * Build plugin context from current state. Includes optional onEntity (for streaming) and signal (for abort).
    */
-  function buildContext(): Omit<PluginContext, 'mode'> {
+  function buildContext(mode: PluginMode): PluginContext {
     const window = buffer.getWindow()
-    return {
+    const base: PluginContext = {
       text: buffer.getText(),
       window,
       entities: store.getAll(),
       cursor: buffer.getCursor(),
+      mode,
+    }
+    if (!currentRunController) return base
+    return {
+      ...base,
+      signal: currentRunController.signal,
+      onEntity(candidate) {
+        const { added, updated } = store.upsert([candidate])
+        for (const entity of added) {
+          emitter.emit('entity', { type: 'entity', entity, isUpdate: false })
+        }
+        for (const entity of updated) {
+          emitter.emit('entity', { type: 'entity', entity, isUpdate: true })
+        }
+      },
     }
   }
 
@@ -71,12 +89,37 @@ export function createRecognizer(options: RecognizerOptions): Recognizer {
   async function runRealtime() {
     if (isDestroyed) return
 
+    currentRunController?.abort()
+    currentRunController = new AbortController()
+
     try {
-      const context = buildContext()
+      const context = buildContext('realtime')
       const result = await runner.runRealtime(context)
 
-      // For realtime, we reconcile to handle removals
-      const allCandidates = result.upsert ?? []
+      // Keep previous non-LLM entities that are still in the document; only replace LLM entities
+      const newCandidates = result.upsert ?? []
+      const currentText = buffer.getText()
+      const existing = store
+        .getAll()
+        .filter((e) => !e.key.startsWith('llm:'))
+        .filter(
+          (e) =>
+            e.span.start >= 0 &&
+            e.span.end <= currentText.length &&
+            currentText.slice(e.span.start, e.span.end) === e.text
+        )
+      const existingAsCandidates: EntityCandidate[] = existing.map(
+        (e) => ({
+          key: e.key,
+          kind: e.kind,
+          span: e.span,
+          text: e.text,
+          value: e.value,
+          confidence: e.confidence,
+          status: e.status,
+        })
+      )
+      const allCandidates = [...newCandidates, ...existingAsCandidates]
       const changes = store.reconcile(allCandidates)
 
       // Emit removal events
@@ -120,8 +163,11 @@ export function createRecognizer(options: RecognizerOptions): Recognizer {
   async function runCommit() {
     if (isDestroyed) return
 
+    currentRunController?.abort()
+    currentRunController = new AbortController()
+
     try {
-      const context = buildContext()
+      const context = buildContext('commit')
       const result = await runner.runCommit(context)
 
       // For commit, we reconcile and confirm all entities
