@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { createRecognizer, plugins, type Entity, type Recognizer } from 'streamsense'
+import { createLlmPlugin } from './llmPlugin'
 
 const ENTITY_STYLES: Record<string, string> = {
   quantity: 'bg-blue-500/25 shadow-[0_2px_0_#3b82f6]',
@@ -7,6 +8,9 @@ const ENTITY_STYLES: Record<string, string> = {
   datetime: 'bg-yellow-500/25 shadow-[0_2px_0_#eab308]',
   url: 'bg-purple-500/25 shadow-[0_2px_0_#a855f7]',
   phone: 'bg-pink-500/25 shadow-[0_2px_0_#ec4899]',
+  person: 'bg-amber-500/25 shadow-[0_2px_0_#f59e0b]',
+  place: 'bg-teal-500/25 shadow-[0_2px_0_#14b8a6]',
+  custom: 'bg-slate-500/25 shadow-[0_2px_0_#64748b]',
 }
 
 const KIND_COLORS: Record<string, string> = {
@@ -15,6 +19,9 @@ const KIND_COLORS: Record<string, string> = {
   datetime: 'bg-yellow-500',
   url: 'bg-purple-500',
   phone: 'bg-pink-500',
+  person: 'bg-amber-500',
+  place: 'bg-teal-500',
+  custom: 'bg-slate-500',
 }
 
 const LEGEND = [
@@ -23,6 +30,9 @@ const LEGEND = [
   { kind: 'datetime', label: 'DateTime' },
   { kind: 'url', label: 'URL' },
   { kind: 'phone', label: 'Phone' },
+  { kind: 'person', label: 'Person (LLM)' },
+  { kind: 'place', label: 'Place (LLM)' },
+  { kind: 'custom', label: 'Other (LLM)' },
 ]
 
 type EventLog = {
@@ -95,6 +105,7 @@ export default function App() {
         plugins.datetime(),
         plugins.url(),
         plugins.phone(),
+        createLlmPlugin(),
       ],
       schedule: {
         realtimeMs: 100,
@@ -193,7 +204,7 @@ export default function App() {
       <main className="flex-1 flex flex-col items-center justify-center p-8">
         <header className="text-center mb-8">
           <h1 className="text-3xl font-semibold bg-gradient-to-r from-blue-500 to-purple-500 bg-clip-text text-transparent mb-2">
-            StreamSense
+            Stream
           </h1>
           <p className="text-neutral-500 text-sm">
             Real-time semantic understanding from streaming text

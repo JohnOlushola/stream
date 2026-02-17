@@ -1,5 +1,5 @@
 /**
- * StreamSense Core Types
+ * Stream Core Types
  * Real-time semantic understanding from streaming text
  */
 
@@ -8,7 +8,7 @@
 // =============================================================================
 
 /**
- * Standard entity kinds supported by StreamSense
+ * Standard entity kinds supported by Stream
  */
 export type EntityKind =
   | 'quantity'
@@ -158,7 +158,10 @@ export type DiagnosticEvent = {
 /**
  * Union of all event types
  */
-export type StreamSenseEvent = EntityEvent | RemoveEvent | DiagnosticEvent
+export type StreamEvent = EntityEvent | RemoveEvent | DiagnosticEvent
+
+/** @deprecated Use StreamEvent */
+export type StreamSenseEvent = StreamEvent
 
 /**
  * Event handler map for type-safe subscriptions

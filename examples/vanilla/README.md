@@ -1,4 +1,4 @@
-# StreamSense - Vanilla Example
+# Stream - Vanilla Example
 
 A pure HTML/CSS/JavaScript example with real-time text highlighting and event monitoring.
 
@@ -17,7 +17,7 @@ Open http://localhost:5173
 - Side panel showing:
   - **Metrics**: Character count, entity count, confirmed count, event count
   - **Current Entities**: List of detected entities with confidence scores
-  - **Event Stream**: Live log of all StreamSense events
+  - **Event Stream**: Live log of all Stream events
 
 ## Try It
 

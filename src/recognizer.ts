@@ -31,7 +31,7 @@ const DEFAULT_OPTIONS = {
 }
 
 /**
- * Creates a StreamSense recognizer
+ * Creates a Stream recognizer
  */
 export function createRecognizer(options: RecognizerOptions): Recognizer {
   const {
